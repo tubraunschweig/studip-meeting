@@ -139,8 +139,8 @@ class BigBlueButton implements DriverInterface, RecordingInterface
     public function getConfigOptions()
     {
         return array(
-            new ConfigOption('url',     dgettext(MeetingPlugin::GETTEXT_DOMAIN, 'URL des BBB-Servers')),
-            new ConfigOption('api-key', dgettext(MeetingPlugin::GETTEXT_DOMAIN, 'Api-Key (Salt)'))
+            new ConfigOption('url',     'URL des BBB-Servers'),
+            new ConfigOption('api-key', 'Api-Key (Salt)')
         );
     }
 }

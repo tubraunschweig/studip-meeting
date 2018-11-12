@@ -336,9 +336,9 @@ class DfnVc implements DriverInterface
     public function getConfigOptions()
     {
         return array(
-            new ConfigOption('url', dgettext(MeetingPlugin::GETTEXT_DOMAIN, 'API-Endpoint'), 'https://connect.vc.dfn.de'),
-            new ConfigOption('login', dgettext(MeetingPlugin::GETTEXT_DOMAIN, 'Funktionskennung')),
-            new ConfigOption('password', dgettext(MeetingPlugin::GETTEXT_DOMAIN, 'Passwort'))
+            new ConfigOption('url',      'API-Endpoint', 'https://connect.vc.dfn.de'),
+            new ConfigOption('login',    'Funktionskennung'),
+            new ConfigOption('password', 'Passwort')
         );
     }
 }
