@@ -5,7 +5,7 @@ namespace ElanEv\Tests\Driver;
 use ElanEv\Driver\BigBlueButton;
 use ElanEv\Driver\JoinParameters;
 use ElanEv\Driver\MeetingParameters;
-use Guzzle\Http\ClientInterface;
+use GuzzleHttp\ClientInterface;
 
 /**
  * @author Christian Flothmann <christian.flothmann@uos.de>

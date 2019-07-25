@@ -83,7 +83,7 @@ abstract class AbstractDriverTest extends \PHPUnit_Framework_TestCase
      */
     protected function createClientMock()
     {
-        $client = $this->getMock('\Guzzle\Http\Client');
+        $client = $this->getMock('\GuzzleHttp\Client');
         $client
             ->expects($this->any())
             ->method('getBaseUrl')
