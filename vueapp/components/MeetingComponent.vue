@@ -15,8 +15,8 @@
                         </span>
                     </div>
                     <div class="right">
-                        <StudipTooltipIcon v-if="room.features && room.features.record && room.features.record == 'true'" 
-                                    :text="'Bitte beachten Sie, dass dieser Raum aufgezeichnet wird!' | i18n"
+                        <StudipTooltipIcon v-if="room.features && room.features.record && room.features.record == 'true'"
+                                    :text="'Bitte beachten Sie, dass dieser Raum aufgezeichnet werden kann!' | i18n"
                                     :badge="true"
                                     >
                             <StudipIcon icon="span-full" role="attention" size="11"></StudipIcon> {{'Rec'}}
@@ -31,11 +31,14 @@
                             @click.prevent="editFeatures()">
                             <StudipIcon icon="admin" role="clickable" size="20"></StudipIcon>
                         </a>
-                        <a style="cursor: pointer;"
+
+                        <a v-if="feedback_enabled"
+                            style="cursor: pointer;"
                             :title=" 'Schreiben Sie ein Feedback' | i18n "
                             @click.prevent="writeFeedback()">
                             <StudipIcon icon="support" role="clickable" size="22"></StudipIcon>
                         </a>
+
                         <a v-if="course_config.display.deleteRoom" style="cursor: pointer;"
                             :title=" 'Raum löschen' | i18n "
                             @click.prevent="deleteRoom($event)">
@@ -156,6 +159,10 @@ export default {
         },
         info: {
             type: Object,
+        },
+        feedback_enabled: {
+            type: Boolean,
+            default: true
         }
     },
 
