@@ -78,12 +78,34 @@ class BigBlueButton implements DriverInterface, RecordingInterface, FolderManage
                 unset($features['giveAccessToRecordings']);
             }
 
+            if (isset($features['guestPolicy-ALWAYS_ACCEPT'])) {
+                if ($features['guestPolicy-ALWAYS_ACCEPT'] == "true") {
+                    $features['guestPolicy'] = 'ALWAYS_ACCEPT';
+                } else {
+                    $features['guestPolicy'] = 'ALWAYS_DENY';
+                }
+                unset($features['guestPolicy-ALWAYS_ACCEPT']);
+            }
+
+            if (isset($features['guestPolicy-ASK_MODERATOR'])) {
+                if ($features['guestPolicy-ASK_MODERATOR'] == "true") {
+                    $features['guestPolicy'] = 'ASK_MODERATOR';
+                }
+                unset($features['guestPolicy-ASK_MODERATOR']);
+            }
+
+            // The logic from BBB seems not to work with ALWAYS_DENY only for guests, in fact, 
+            // it denies both guests and participants.
             if ($features['guestPolicy'] == 'ALWAYS_DENY') {
                 unset($features['guestPolicy']);
             }
 
             if ($features['record'] == 'true') {
-                $params['name'] = $params['name'] . ' (' . date('Y-m-d H:i:s') . ')';
+                if (self::checkRecordingCapability($features)) {
+                    $params['name'] = $params['name'] . ' (' . date('Y-m-d H:i:s') . ')';
+                } else {
+                    $features['record'] = 'false';
+                }
             }
 
             if (!isset($features['welcome'])) {
@@ -174,7 +196,7 @@ class BigBlueButton implements DriverInterface, RecordingInterface, FolderManage
         } else {
             $params = array(
                 'meetingID' => $parameters->getRemoteId() ?: $parameters->getMeetingId(),
-                'fullName' => sprintf('%s %s', $parameters->getFirstName(), $parameters->getLastName()),
+                'fullName' => sprintf('%s, %s', $parameters->getLastName(), $parameters->getFirstName()),
                 'password' => $parameters->getPassword(),
                 'userID' => '',
                 'webVoiceConf' => '',
@@ -311,7 +333,7 @@ class BigBlueButton implements DriverInterface, RecordingInterface, FolderManage
     {
         $segments = array();
         foreach ($params as $key => $value) {
-            if (filter_var($value, FILTER_VALIDATE_BOOLEAN)) {
+            if (filter_var($value, FILTER_VALIDATE_BOOLEAN) && $key != 'duration') {
                 $encoded_value = $value == true ? 'true' : 'false';
             } else {
                 $encoded_value = rawurlencode($value);
@@ -329,6 +351,7 @@ class BigBlueButton implements DriverInterface, RecordingInterface, FolderManage
     {
         return array(
             new ConfigOption('active', dgettext(MeetingPlugin::GETTEXT_DOMAIN, 'Aktiv?'), true),
+            new ConfigOption('label', dgettext(MeetingPlugin::GETTEXT_DOMAIN, 'Label'), 'Server #'),
             new ConfigOption('url',     dgettext(MeetingPlugin::GETTEXT_DOMAIN, 'URL des BBB-Servers')),
             new ConfigOption('api-key', dgettext(MeetingPlugin::GETTEXT_DOMAIN, 'Api-Key (Salt)')),
             new ConfigOption('proxy', dgettext(MeetingPlugin::GETTEXT_DOMAIN, 'Zugriff über Proxy')),
@@ -336,6 +359,7 @@ class BigBlueButton implements DriverInterface, RecordingInterface, FolderManage
             new ConfigOption('request_timeout', dgettext(MeetingPlugin::GETTEXT_DOMAIN, 'Request Timeout (e.g. 3.4)')),
             new ConfigOption('maxParticipants', dgettext(MeetingPlugin::GETTEXT_DOMAIN, 'Maximale Teilnehmer')),
             new ConfigOption('course_types', dgettext(MeetingPlugin::GETTEXT_DOMAIN, 'Veranstaltungstyp'), MeetingPlugin::getSemClasses(), _('Nur in folgenden Veranstaltungskategorien nutzbar')),
+            new ConfigOption('description', dgettext(MeetingPlugin::GETTEXT_DOMAIN, 'Beschreibung'), '', _('Ein Beschreibungstext wird angezeigt, um den Server zu führen oder zu beschreiben.')),
             new ConfigOption('roomsize-presets', dgettext(MeetingPlugin::GETTEXT_DOMAIN, 'Raumgrößenvoreinstellungen'), self::getRoomSizePresets()),
         );
     }
@@ -371,11 +395,6 @@ class BigBlueButton implements DriverInterface, RecordingInterface, FolderManage
         $res['welcome'] = new ConfigOption('welcome', dgettext(MeetingPlugin::GETTEXT_DOMAIN, 'Willkommensnachricht'),
                     Driver::getConfigValueByDriver((new \ReflectionClass(self::class))->getShortName(), 'welcome'),
                     self::getFeatureInfo('welcome'));
-        
-        $res['guestPolicy'] =
-            new ConfigOption('guestPolicy', dgettext(MeetingPlugin::GETTEXT_DOMAIN, 'Zugang via Link'),
-                 ['ALWAYS_DENY' => _('Nicht gestattet'), 'ASK_MODERATOR' => _('Moderator vor dem Zutritt fragen'), 'ALWAYS_ACCEPT' => _('Gestattet'), ],
-                 _('Legen Sie fest, ob Benutzer mit Einladungslink als Gäste an der Besprechung teilnehmen dürfen und ob Gäste dem Meeting direkt beitreten können oder ihre Teilnahme von einem Moderator bestätigt werden muss.'));
 
         $res['duration'] = new ConfigOption('duration', dgettext(MeetingPlugin::GETTEXT_DOMAIN, 'Minuten Konferenzdauer'),
                     240,
@@ -383,6 +402,11 @@ class BigBlueButton implements DriverInterface, RecordingInterface, FolderManage
 
         $res['maxParticipants'] = new ConfigOption('maxParticipants', dgettext(MeetingPlugin::GETTEXT_DOMAIN, 'Maximale Teilnehmerzahl'), 50, self::getFeatureInfo('maxParticipants'));
 
+        $res['guestPolicy-ALWAYS_ACCEPT'] = new ConfigOption('guestPolicy-ALWAYS_ACCEPT', dgettext(MeetingPlugin::GETTEXT_DOMAIN, 'Zugang via Link'), false,
+                 _('Legen Sie fest, ob Benutzer mit Einladungslink als Gäste an der Besprechung teilnehmen dürfen.'));
+
+        $res['guestPolicy-ASK_MODERATOR'] = new ConfigOption('guestPolicy-ASK_MODERATOR', dgettext(MeetingPlugin::GETTEXT_DOMAIN, 'Moderatoren vor Teilnehmendenzutritt fragen'), false,
+                 _('Legen Sie fest, ob Gäste und Teilnehmer dem Meeting direkt beitreten können oder ihre Teilnahme von einem Moderator bestätigt werden muss.'));
 
         $res['privateChat'] = new ConfigOption('lockSettingsDisablePrivateChat', dgettext(MeetingPlugin::GETTEXT_DOMAIN, 'Private Chats deaktivieren'),
                     false, null);
@@ -407,9 +431,17 @@ class BigBlueButton implements DriverInterface, RecordingInterface, FolderManage
     public static function getRecordFeature()
     {
         $res = [];
-        if (Driver::getConfigValueByDriver((new \ReflectionClass(self::class))->getShortName(), 'record')) { // dependet on config record
+        $record_config = filter_var(Driver::getConfigValueByDriver((new \ReflectionClass(self::class))->getShortName(), 'record'), FILTER_VALIDATE_BOOLEAN);
+        $opencast_config = filter_var(Driver::getConfigValueByDriver((new \ReflectionClass(self::class))->getShortName(), 'opencast'), FILTER_VALIDATE_BOOLEAN);
+        $info = '';
+        if ($opencast_config) {
+            $info = _('Opencast wird als Aufzeichnungsserver verwendet. Diese Funktion ist im Testbetrieb und es kann noch zu Fehlern kommen.');
+        } else if ($record_config) {
+            $info = _('Erlaubt es Moderatoren, die Medien und Ereignisse in der Sitzung für die spätere Wiedergabe aufzuzeichnen. Die Aufzeichnung muss innerhalb der Sitzung von einem Moderator gestartet werden.');
+        }
+        if ($info) {
             $res[] = new ConfigOption('record', dgettext(MeetingPlugin::GETTEXT_DOMAIN, 'Sitzungen können aufgezeichnet werden.'),
-                false, _('Erlaubt es Moderatoren, die Medien und Ereignisse in der Sitzung für die spätere Wiedergabe aufzuzeichnen. Die Aufzeichnung muss innerhalb der Sitzung von einem Moderator gestartet werden.'));
+            false, $info);
         }
 
         //independent from config record
@@ -424,7 +456,8 @@ class BigBlueButton implements DriverInterface, RecordingInterface, FolderManage
     public static function useOpenCastForRecording()
     {
         $res = false;
-        !MeetingPlugin::checkOpenCast() ?: $res = new ConfigOption('opencast', dgettext(MeetingPlugin::GETTEXT_DOMAIN, 'Opencast für Aufzeichnungen verwenden'), false);
+        !MeetingPlugin::checkOpenCast() ?: $res = new ConfigOption('opencast', dgettext(MeetingPlugin::GETTEXT_DOMAIN, 'Opencast für Aufzeichnungen verwenden')
+                                                , false, _('Wenn diese Option aktiviert ist, ist die Aufzeichnung nur mit einer gültigen Serien-ID für den Kurs zulässig.'));
         return $res;
     }
 
@@ -437,6 +470,10 @@ class BigBlueButton implements DriverInterface, RecordingInterface, FolderManage
         switch ($name) {
             case 'webcamsOnlyForModerator':
                 return _('Bei Aktivierung dieser Option können ausschließlich Moderatoren die von Teilnehmenden freigegebenen Webcams sehen.');
+            break;
+            case 'welcome':
+                return _('Wenn leer, wird die Standardnachricht angezeigt. Sie können folgende Schlüsselwörter einfügen, die automatisch ersetzt werden:
+                %% CONFNAME %% (Sitzungsname), %% DIALNUM %% (Sitzungswahlnummer)');
             break;
             case 'maxParticipants':
                 // return _('Die maximale Anzahl von Benutzern, die gleichzeitig an der Konferenz teilnehmen dürfen.');
@@ -456,10 +493,6 @@ class BigBlueButton implements DriverInterface, RecordingInterface, FolderManage
             case 'room_anyone_can_start':
                 // return _('Jeder Teilnehmer kann die Konferenz starten.');
                 // break;
-            case 'welcome':
-                return _('Wenn leer, wird die Standardnachricht angezeigt. Sie können folgende Schlüsselwörter einfügen, die automatisch ersetzt werden:
-                %% CONFNAME %% (Sitzungsname), %% DIALNUM %% (Sitzungswahlnummer)');
-                break;
             default:
                 return '';
                 break;
@@ -515,18 +548,20 @@ class BigBlueButton implements DriverInterface, RecordingInterface, FolderManage
             $meeting_token->store();
         }
 
-        foreach ($folder->getTypedFolder()->getFiles() as $file_ref) {
-            if ($file_ref->id && $file_ref->name) {
-                $document_url = \PluginEngine::getURL('meetingplugin', [], "api/slides/$meetingId/{$file_ref->id}/$token");
-                if (isset($_SERVER['SERVER_NAME']) && strpos($document_url, $_SERVER['SERVER_NAME']) === FALSE) {
-                    $base_url = sprintf(
-                        "%s://%s",
-                        isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] != 'off' ? 'https' : 'http',
-                        $_SERVER['SERVER_NAME']
-                    );
-                    $document_url = $base_url . $document_url;
+        if ($folder) {
+            foreach ($folder->getTypedFolder()->getFiles() as $file_ref) {
+                if ($file_ref->id && $file_ref->name) {
+                    $document_url = \PluginEngine::getURL('meetingplugin', [], "api/slides/$meetingId/{$file_ref->id}/$token");
+                    if (isset($_SERVER['SERVER_NAME']) && strpos($document_url, $_SERVER['SERVER_NAME']) === FALSE) {
+                        $base_url = sprintf(
+                            "%s://%s",
+                            isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] != 'off' ? 'https' : 'http',
+                            $_SERVER['SERVER_NAME']
+                        );
+                        $document_url = $base_url . $document_url;
+                    }
+                    $documents[] = "<document url='$document_url' filename='{$file_ref->name}' />";
                 }
-                $documents[] = "<document url='$document_url' filename='{$file_ref->name}' />";
             }
         }
         if (count($documents)) {
@@ -539,5 +574,20 @@ class BigBlueButton implements DriverInterface, RecordingInterface, FolderManage
         }
 
         return $options;
+    }
+
+    /**
+     * {@inheritDoc}
+    */
+    public static function checkRecordingCapability($features)
+    {
+        $record_config = filter_var(Driver::getConfigValueByDriver((new \ReflectionClass(self::class))->getShortName(), 'record'), FILTER_VALIDATE_BOOLEAN);
+        $opencast_config = filter_var(Driver::getConfigValueByDriver((new \ReflectionClass(self::class))->getShortName(), 'opencast'), FILTER_VALIDATE_BOOLEAN);
+        if ($opencast_config && !empty($features['meta_opencast-dc-isPartOf'])) {
+           return true;
+        } else if ($record_config) {
+            return true;
+        }
+        return false;
     }
 }

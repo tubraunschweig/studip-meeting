@@ -23,10 +23,11 @@ use ElanEv\Model\Meeting;
 
 use Meetings\AppFactory;
 use Meetings\RouteMap;
+use Meetings\WidgetHandler;
 
 require_once 'compat/StudipVersion.php';
 
-class MeetingPlugin extends StudIPPlugin implements StandardPlugin, SystemPlugin
+class MeetingPlugin extends StudIPPlugin implements PortalPlugin, StandardPlugin, SystemPlugin
 {
     const GETTEXT_DOMAIN = 'meetings';
     const NAVIGATION_ITEM_NAME = 'video-conferences';
@@ -68,7 +69,7 @@ class MeetingPlugin extends StudIPPlugin implements StandardPlugin, SystemPlugin
      * @param Range $context
      * @return bool
      */
-    public function isActivatableForContext(Range $context)              
+    public function isActivatableForContext(Range $context)
     {
         return get_class($context) === \Course::class;
     }
@@ -325,12 +326,12 @@ class MeetingPlugin extends StudIPPlugin implements StandardPlugin, SystemPlugin
 
     /**
      * getMeetingManifestInfo
-     * 
+     *
      * get the plugin manifest from PluginManager getPluginManifest method
-     * 
+     *
      * @return Array $metadata the manifest metadata of this plugin
      */
-    public static function getMeetingManifestInfo() 
+    public static function getMeetingManifestInfo()
     {
         $plugin_manager = \PluginManager::getInstance();
         $this_plugin = $plugin_manager->getPluginInfo(__CLASS__);
@@ -344,13 +345,22 @@ class MeetingPlugin extends StudIPPlugin implements StandardPlugin, SystemPlugin
     *
     * @param object event
     * @param user $user
-    * 
+    *
     */
     public function DeleteMeetingOnUserDelete($event, $user)
     {
-        foreach (MeetingCourse::findByUser($user) as $meetingCourse) {
-            $meetingCourse->meeting->delete();
-            $meetingCourse->delete();
+        require_once __DIR__ . '/vendor/autoload.php';
+
+        if (!$user instanceof \Seminar_User) {
+            $seminar_user = new \Seminar_User($user);
+        }
+        $meetingCourses = MeetingCourse::findByUser($seminar_user);
+
+        if ($meetingCourses) {
+            foreach ($meetingCourses as $meetingCourse) {
+                $meetingCourse->meeting->delete();
+                $meetingCourse->delete();
+            }
         }
     }
 
@@ -359,14 +369,20 @@ class MeetingPlugin extends StudIPPlugin implements StandardPlugin, SystemPlugin
     *
     * @param string $old_id old user id
     * @param string $new_id new user id
-    * 
+    *
     */
     public function UpdateMeetingOnUserMigrate($event, $old_id, $new_id)
     {
-        $user_meetings = Meeting::findBySQL('user_id = ?', [$old_id]);
-        foreach ($user_meetings as $meeting) {
-            $meeting->user_id = $new_id;
-            $meeting->store();
+        require_once __DIR__ . '/vendor/autoload.php';
+
+        if ($old_id && $new_id) {
+            $user_meetings = Meeting::findBySQL('user_id = ?', [$old_id]);
+            if ($user_meetings) {
+                foreach ($user_meetings as $meeting) {
+                    $meeting->user_id = $new_id;
+                    $meeting->store();
+                }
+            }
         }
     }
 
@@ -399,11 +415,11 @@ class MeetingPlugin extends StudIPPlugin implements StandardPlugin, SystemPlugin
      *
      * @param  Course $course The current course which the server is going to be used
      * @param  String $server_course_type The server course type
-     * @return boolean 
+     * @return boolean
      */
     public static function checkCourseType(Course $course, $server_course_type)
     {
-        if ($server_course_type == '') { // When empty, it supports all course types 
+        if ($server_course_type == '') { // When empty, it supports all course types
             return true;
         }
 
@@ -464,5 +480,38 @@ class MeetingPlugin extends StudIPPlugin implements StandardPlugin, SystemPlugin
         }
 
         return '';
+    }
+
+    /**
+     * Return the template for the widget.
+     *
+     * @return Flexi_PhpTemplate The template containing the widget contents
+     */
+    public function getPortalTemplate()
+    {
+        require_once __DIR__ . '/vendor/autoload.php';
+
+        // We need to use "nobody" rights for Upload Slides,
+        // but in here we have to prevent that right,
+        // in order to not to show the template in login page and so on.
+        if ('nobody' === $GLOBALS['user']->id) {
+            return;
+        }
+
+        $template_factory = new Flexi_TemplateFactory(__DIR__ . "/templates");
+        $template = $template_factory->open("index.php");
+        
+        $template->set_attribute('items', WidgetHandler::getMeetingsForWidget());
+
+        $texts = [
+            'empty' => $this->_('Derzeit finden keine Meetings in den gebuchten Kursen statt.'),
+            'current' => $this->_('Derzeitige Meetings'),
+            'upcoming' => $this->_('Kommende Meetings'),
+            'to_course' => $this->_('Zur Meeting-Liste'),
+            'to_meeting' => $this->_('Direkt zum Meeting')
+        ];
+        $template->set_attribute('texts', $texts);
+
+        return $template;
     }
 }

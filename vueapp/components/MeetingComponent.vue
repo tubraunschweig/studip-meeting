@@ -22,7 +22,7 @@
                         </span>
                     </div>
                     <div class="right">
-                        <StudipTooltipIcon v-if="room.features && room.features.record && room.features.record == 'true'"
+                        <StudipTooltipIcon v-if="room.features && room.features.record && room.features.record == 'true' && !room.record_not_allowed"
                                     :text="$gettext('Bitte beachten Sie, dass dieser Raum aufgezeichnet wird!')"
                                     :badge="true"
                                     >
@@ -52,6 +52,13 @@
                 </div>
             </legend>
             <label id="details">
+
+                <div v-if="course_config.display.editRoom && room.is_default == 1">
+                    <StudipIcon class="info-icon" icon="star"
+                            role="clickable" size="24"></StudipIcon>
+                    <span v-text="$gettext('Dieser Raum is Default')"></span>
+                </div>
+
                 <div v-if="course_config.display.editRoom">
                     <a style="cursor: pointer;" :title=" room.join_as_moderator == 1 ?
                         $gettext('Teilnehmenden nur eingeschränkte Rechte geben')
@@ -85,22 +92,32 @@
                             role="status-yellow" size="24"></StudipIcon>
                     <span v-translate>
                         Das Meeting gehört der Gruppe
-                        {{ group_name }}
                     </span>
+                    <span v-if="group_name" v-text="group_name"></span>
                 </div>
 
-                <div v-if="room.folder_id !== null && room.details && room.details.folder">
-                    <StudipIcon class="info-icon" icon="folder-empty"
+                <div v-if="course_config.display.editRoom && room.folder_id !== null && room.details && room.details.folder">
+                    <template v-if="room.preupload_not_allowed">
+                        <div>
+                            <a>
+                                <StudipIcon class="info-icon" icon="exclaim-circle-full"
+                                    role="status-red" size="24"></StudipIcon>
+                            </a>
+                            <span v-translate v-text="room.preupload_not_allowed"></span>
+                        </div>
+                    </template>
+                    <template v-else>
+                        <StudipIcon class="info-icon" icon="folder-empty"
                             role="inactive" size="24">
-                    </StudipIcon>
-
-                    <translate>
-                        Ordner für automatische Uploads:
-                    </translate>
-
-                    <a :href="room.details.folder.link" target="_blank">
-                        {{ room.details.folder.name }}
-                    </a>
+                        </StudipIcon>
+                        <translate>
+                            Ordner für automatische Uploads:
+                        </translate>
+                         <a :href="room.details.folder.link" target="_blank">
+                            {{ room.details.folder.name }}
+                        </a>
+                    </template>
+                   
                 </div>
 
 
@@ -111,6 +128,14 @@
                     {{ this.config[room.driver].display_name
                         ? this.config[room.driver].display_name
                         : room.driver }}
+                </div>
+
+                <div v-if="course_config.display.editRoom && room.features && room.features.record && room.features.record == 'true' && room.record_not_allowed">
+                    <a>
+                        <StudipIcon class="info-icon" icon="exclaim-circle-full"
+                            role="status-red" size="24"></StudipIcon>
+                    </a>
+                    <span v-translate v-text="room.record_not_allowed"></span>
                 </div>
 
                 <div v-if="!room.enabled">
@@ -125,7 +150,7 @@
                 </div>
             </label>
             <div class="meeting-item-btns">
-                <StudipButton v-if="course_config.display.editRoom && room.features && room.features.guestPolicy && room.features.guestPolicy != 'ALWAYS_DENY'"
+                <StudipButton v-if="course_config.display.editRoom && room.features && room.features['guestPolicy-ALWAYS_ACCEPT'] && room.features['guestPolicy-ALWAYS_ACCEPT'] == 'true'"
                     type="button" v-on:click="getGuestInfo()"
                     icon="add" v-translate
                 >
@@ -215,12 +240,16 @@ export default {
     },
 
     methods: {
+        getNonReactiveRoom() {
+            return JSON.parse(JSON.stringify(this.room));
+        },
+
         writeFeedback() {
-            this.$emit('getFeedback', this.room);
+            this.$emit('getFeedback', this.getNonReactiveRoom());
         },
 
         editFeatures() {
-            this.$emit('getFeatures', this.room);
+            this.$emit('getFeatures', this.getNonReactiveRoom());
         },
 
         editRights() {
@@ -256,7 +285,7 @@ export default {
         },
 
         getRecording() {
-            this.$emit('getRecording', this.room);
+            this.$emit('getRecording', this.getNonReactiveRoom());
         },
 
         deleteRoom(event) {
@@ -276,7 +305,7 @@ export default {
         },
 
         getGuestInfo() {
-            this.$emit('getGuestInfo', this.room);
+            this.$emit('getGuestInfo', this.getNonReactiveRoom());
         },
     }
 }

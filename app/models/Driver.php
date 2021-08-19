@@ -40,7 +40,7 @@ class Driver
             if (in_array('ElanEv\Driver\RecordingInterface', class_implements($class)) !== false) {
                 //If there is RecordingInterface then the field 'record' is considered as a must later on in the logic
                 //that means, if admin set record to true then every other setting like opencast can be used
-                $recording_options['record'] = new \ElanEv\Driver\ConfigOption('record', dgettext(MeetingPlugin::GETTEXT_DOMAIN, 'Aufzeichnungen zulassen'), false);
+                $recording_options['record'] = new \ElanEv\Driver\ConfigOption('record', dgettext(MeetingPlugin::GETTEXT_DOMAIN, 'Normale Aufzeichnungen zulassen'), false);
                 if ($oc_config = $class::useOpenCastForRecording()) {
                     $recording_options['opencast'] = $oc_config;
                 }
@@ -91,6 +91,7 @@ class Driver
             return;
         }
 
+        $is_config_corrected = false;
         foreach (self::$config as $driver_name => $config) {
             $class = 'ElanEv\\Driver\\' . $driver_name;
 
@@ -114,9 +115,17 @@ class Driver
             if (in_array('ElanEv\Driver\RecordingInterface', class_implements($class)) !== false) {
                 self::$config[$driver_name]['features']['record'] = self::convertDriverConfigToArray($class::getRecordFeature());
             }
-            /* if (in_array('ElanEv\Driver\FolderManagementInterface', class_implements($class)) !== false) {
-                self::$config[$driver_name]['features']['folders'] = true;
-            } */
+
+            // Make sure Opencast Plugin is activated
+            if (isset(self::$config[$driver_name]['opencast']) && !MeetingPlugin::checkOpenCast()) {
+                unset(self::$config[$driver_name]['opencast']);
+                $is_config_corrected = true;
+            }
+        }
+
+        // When the config is corrected in between, it should be saved again.
+        if ($is_config_corrected) {
+            \Config::get()->store('VC_CONFIG', json_encode(self::$config));
         }
     }
 
@@ -156,6 +165,8 @@ class Driver
             $valid_servers = false;
         }
         $approved_servers = [];
+        $unapproved_server_indices = [];
+        $all_servers = [];
         foreach ($config_options as $key => $value) {
             if ($key == 'servers') {
                 $config_tmp[$driver_name] = $config_options;
@@ -178,9 +189,17 @@ class Driver
 
                     self::adjustCurrentMeetingsDefaultSettings($driver_name, $index, $server_info);
 
-                    $approved_servers[] = $server_info;
+                    if ($valid_servers) {
+                        $approved_servers[] = $server_info;
+                    } else {
+                        // Deactivate the server if it is not valid, to prevent consumption.
+                        $server_info['active'] = false;
+                        $unapproved_server_indices[] = '#' . ($index + 1);
+                    }
+                    // Keep them into $all_servers array, so the sorting remains the same.
+                    $all_servers[] = $server_info;
                 }
-                self::$config[$driver_name][$key] = $approved_servers;
+                self::$config[$driver_name][$key] = $all_servers;
             } else {
                 self::$config[$driver_name][$key] = $value;
             }
@@ -192,7 +211,12 @@ class Driver
 
         \Config::get()->store('VC_CONFIG', json_encode(self::$config));
 
-        return $valid_servers;
+        $result = [
+            "valid_servers" => $valid_servers,
+            "invalid_indices" => $unapproved_server_indices
+        ];
+
+        return $result;
     }
 
     static function getConfig()

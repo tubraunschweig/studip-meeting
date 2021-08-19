@@ -53,8 +53,17 @@ class RoomEdit extends MeetingsController
         //Checking Server Active
         $active_server = $servers[$json['server_index']]['active'];
 
+        // Check group
+        $allow_group = true;
+        if (isset($json['group_id']) && !empty($json['group_id'])) {
+            $group = \Statusgruppen::find($json['group_id']);
+            if (!$group) {
+                $allow_group = false;
+            }
+        }
+
         $message = [];
-        if (!$meetingCourse->isNew() && $name && $allow_change_driver && $allow_change_server_index && $allow_course_type && $active_server) {
+        if (!$meetingCourse->isNew() && $name && $allow_change_driver && $allow_change_server_index && $allow_course_type && $active_server && $allow_group) {
             $change_date = new \DateTime();
             if (isset($json['active'])) {
                 $meetingCourse->active = $json['active'];
@@ -64,6 +73,11 @@ class RoomEdit extends MeetingsController
                 $meetingCourse->group_id = ((empty($json['group_id']) ? null : $json['group_id']));
                 $meetingCourse->store();
             }
+
+            // Handel course default room.
+            $is_default = isset($json['is_default']) ? intval($json['is_default']) : 0;
+            $this->manageCourseDefaultRoom($room_id, $json['cid'], $is_default);
+
             $meeting = $meetingCourse->meeting;
             $meeting->name = $name;
             !isset($json['recordingUrl']) ?: $meeting->recording_url = utf8_decode($json['recording_url']);
@@ -98,31 +112,31 @@ class RoomEdit extends MeetingsController
                 }
 
                 //Handle recording stuff
-                $record = 'false';
-                $opencast_series_id = '';
-                if (Driver::getConfigValueByDriver($json['driver'], 'record')) { //config double check
-                    if (isset($json['features']['record']) && $json['features']['record'] == 'true') { //user record request
-                        $record = 'true';
-                        if (Driver::getConfigValueByDriver($json['driver'], 'opencast')) { // config check for opencast
-                            $series_id = MeetingPlugin::checkOpenCast($json['cid']);
-                            if ($series_id) {
-                                $opencast_series_id = $series_id;
-                            } else if ($series_id === false) {
-                                $message = [
-                                    'text' => I18N::_('Opencast Series id kann nicht gefunden werden!'),
-                                    'type' => 'error'
-                                ];
-                                return $this->createResponse([
-                                    'message'=> $message,
-                                ], $response);
-                            } else if ($series_id === '') {
-                                //TODO: handel if the opencast is not activated!
-                            }
+                $has_recording_error = false;
+                $recording_error_text = '';
+                if (isset($json['features']['record']) && filter_var($json['features']['record'], FILTER_VALIDATE_BOOLEAN)) {  // Recording is asked...
+                    $recording_capability = $this->checkRecordingCapability($json['driver'], $json['cid']);
+                    if ($recording_capability['allow_recording'] == false
+                        || ($recording_capability['allow_recording'] == true && $recording_capability['type'] == 'opencast'
+                            && empty($recording_capability['seriesid']))) {
+                        $has_recording_error = true;
+                        $recording_error_text = I18N::_($recording_capability['message'] ? $recording_capability['message'] : 'Sitzungsaufzeichnung ist nicht möglich!');
+                    } else {
+                        if ($recording_capability['type'] == 'opencast') {
+                            $json['features']['meta_opencast-dc-isPartOf'] = $recording_capability['seriesid'];
                         }
                     }
                 }
-                $json['features']['record'] = $record;
-                !$opencast_series_id ?: $json['features']['meta_opencast-dc-isPartOf'] = $opencast_series_id;
+                if ($has_recording_error) {
+                    $message = [
+                        'text' => $recording_error_text,
+                        'type' => 'error'
+                    ];
+                    return $this->createResponse([
+                        'message'=> $message,
+                    ], $response);
+                    die();
+                }
 
                 //validate maxParticipants if the server has default
                 $servers = Driver::getConfigValueByDriver($json['driver'], 'servers');
@@ -147,7 +161,12 @@ class RoomEdit extends MeetingsController
                 'type' => 'success'
             ];
         } else {
-            $message = ($allow_course_type ? 'Raumeinstellung kann nicht bearbeitet werden!' : 'Der ausgewählte Server ist in diesem Veranstaltungstyp nicht verfügbar');
+            $message = 'Raumeinstellung kann nicht bearbeitet werden!';
+            if (!$allow_group) {
+                $message = 'Die ausgewählte Gruppe ist nicht mehr verfügbar.';
+            } else if (!$allow_course_type) {
+                $message = 'Der ausgewählte Server ist in diesem Veranstaltungstyp nicht verfügbar.';
+            }
             $message = [
                 'text' => I18N::_($message),
                 'type' => 'error'

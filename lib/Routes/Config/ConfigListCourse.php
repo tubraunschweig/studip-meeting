@@ -54,8 +54,8 @@ class ConfigListCourse extends MeetingsController
 
         if (!empty($config)) {
             $config = $this->setDefaultServerProfiles($config, $cid);
-            $config = $this->setOpencastTooltipText($config, $cid);
             $config = $this->setServerCourseType($config, $cid);
+            $config = $this->setServerDetails($config);
         }
 
         if ($config && is_array($config)) {
@@ -147,31 +147,6 @@ class ConfigListCourse extends MeetingsController
     }
 
     /**
-     * Check against record feature, if exists looks for opencast recording capability and changes the
-     *
-     * @param $config   plugin general config
-     * @param $cid      course id
-     *
-     * @return $config  plugin general config
-    */
-    private function setOpencastTooltipText($config, $cid)
-    {
-        foreach ($config as $driver_name => $settings) {
-            if ((isset($settings['record']) && $settings['record'] == "1")
-                && (isset($settings['opencast']) && $settings['opencast'] == "1")
-                && !empty(MeetingPlugin::checkOpenCast($cid))
-                && (isset($settings['features']['record']))) {
-                $record_index = array_search('record', array_column($settings['features']['record'], 'name'));
-                if ($record_index !== FALSE) {
-                    $tooltip_text = I18N::_('Opencast wird als Aufzeichnungsserver verwendet. Diese Funktion ist im Testbetrieb und es kann noch zu Fehlern kommen.');
-                    $config[$driver_name]['features']['record'][$record_index]['info'] = $tooltip_text;
-                }
-            }
-        }
-        return $config;
-    }
-
-    /**
      * Define the server course type compatibilty with the current course
      *
      * @param $config   plugin general config
@@ -187,6 +162,36 @@ class ConfigListCourse extends MeetingsController
                     $config[$driver_name]['server_course_type'][$index] = [
                         "valid" => MeetingPlugin::checkCourseType(\Course::find($cid), $server_values['course_types']),
                         "name" => MeetingPlugin::getCourseTypeName($server_values['course_types'])
+                    ];
+                }
+            }
+        }
+        return $config;
+    }
+
+    /**
+     * Define the server label and description to display
+     *
+     * @param $config   plugin general config
+     *
+     * @return $config  plugin general config
+    */
+    private function setServerDetails($config)
+    {
+        foreach ($config as $driver_name => $settings) {
+            if (isset($settings['servers']) && count($settings['servers'])) {
+                foreach ($settings['servers'] as $index => $server_values) {
+                    $label = "Server " . ($index + 1);
+                    $description = "";
+                    if (isset($server_values['label']) && trim($server_values['label']) != '') {
+                        $label = ltrim(rtrim($server_values['label']));
+                    }
+                    if (isset($server_values['description']) && trim($server_values['description']) != '') {
+                        $description = ltrim(rtrim($server_values['description']));
+                    }
+                    $config[$driver_name]['server_details'][$index] = [
+                        "label" => \htmlReady($label),
+                        "description" => \htmlReady($description)
                     ];
                 }
             }

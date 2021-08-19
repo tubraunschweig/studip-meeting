@@ -12,6 +12,7 @@ use Meetings\Errors\Error;
 use Exception;
 use Meetings\Models\I18N;
 use ElanEv\Model\MeetingCourse;
+use MeetingPlugin;
 
 class ConfigAdd extends MeetingsController
 {
@@ -24,35 +25,20 @@ class ConfigAdd extends MeetingsController
         try {
             $res_message_text = [];
             foreach ($json['config'] as $driver_name => $config_options ) {
-                //Make every record features to false when the record config is disabled
-                if (isset($config_options['record']) && !filter_var($config_options['record'], FILTER_VALIDATE_BOOLEAN)) {
-                    $courseMeetings = MeetingCourse::findAll();
-                    foreach ($courseMeetings as $courseMeeting) {
-                        $features = json_decode($courseMeeting->meeting->features, true);
-                        if (isset($features['record']) && filter_var($features['record'], FILTER_VALIDATE_BOOLEAN)) {
-                            $features['record'] = false;
-                            $courseMeeting->meeting->features = json_encode($features);
-                            $courseMeeting->meeting->store();
-                        }
+
+                $result = Driver::setConfigByDriver($driver_name, $config_options);
+
+                if ($result['valid_servers'] === false) {
+                    $info = $driver_name;
+                    $message = '';
+                    if (count($result['invalid_indices'])) {
+                        $info .= ' (' . implode(', ', $result['invalid_indices']) . ') ';
+                        $message = sprintf(I18N::_('Die Überprüfung der Servereinstellungen '
+                        . 'für %s war nicht erfolgreich, wurden aber trotzdem gespeichert.'), $info);
+                    } else {
+                        $message = sprintf(I18N::_('Der Treiber %s kann nicht verwendet werden, da er keinen Server hat.'), $info);
                     }
-                }
-
-                // Remove folder_id from meetings when the preupload is off
-                if (isset($config_options['preupload']) && !filter_var($config_options['preupload'], FILTER_VALIDATE_BOOLEAN)) {
-                    $courseMeetings = MeetingCourse::findAll();
-                    foreach ($courseMeetings as $courseMeeting) {
-                        if ($courseMeeting->meeting->driver == $driver_name && $courseMeeting->meeting->folder_id) {
-                            $courseMeeting->meeting->folder_id = null;
-                            $courseMeeting->meeting->store();
-                        }
-                    }
-                }
-
-                $valid_servers = Driver::setConfigByDriver($driver_name, $config_options);
-
-                if (!$valid_servers) {
-                    $res_message_text[] = sprintf(I18N::_('Die Überprüfung der Servereinstellungen '
-                        . 'für %s war nicht erfolgreich, wurden aber trotzdem gespeichert.'), $driver_name);
+                    $res_message_text[] = $message;
                 }
             }
 
